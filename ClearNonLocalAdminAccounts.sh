@@ -36,7 +36,7 @@ mount_smbfs -o nobrowse //'DOMAIN;username:password'@domain.local/SYSVOL /Volume
 
 # Read localadmin file to LOCADMIN variable. We'll do all our processing from that.
 
-LOCADMIN=$( cat /Volumes/SYSVOL/arts.local/localadmin/localadmins.txt)
+LOCADMIN=$( cat /Volumes/SYSVOL/domain.local/localadmin/localadmins.txt)
 
 # Unmount and clean up fileshare.
 
