@@ -27,7 +27,7 @@ IFS=$'\n'
 
 # Special section to set up globally exempted user accounts
 
-exempt=( uadmin sshadmin Shared Guest .localized libadmin ualkiosk )
+exempt=( uadmin sshadmin Shared Guest .localized ualpss )
 
 # Mount fileshare where local admin file is kept.
 
@@ -36,7 +36,7 @@ mount_smbfs -o nobrowse //'DOMAIN;username:password'@domain.local/SYSVOL /Volume
 
 # Read localadmin file to LOCADMIN variable. We'll do all our processing from that.
 
-LOCADMIN=$( cat /Volumes/SYSVOL/domain.local/localadmin/localadmins.txt)
+LOCADMIN=$(cat /Volumes/SYSVOL/domain.local/localadmin/localadmins.txt)
 
 # Unmount and clean up fileshare.
 
@@ -91,9 +91,9 @@ do
 
 # Does the flag file exist? If so, delete it.
 
-   if [ -f /var/tmp/ualadminexempt ];
+   if [ -f /var/tmp/adminexempt ];
    then
-      rm /var/tmp/ualadminexempt
+      rm /var/tmp/adminexempt
    fi
 
 # Loop around the exemption array to check current user.
@@ -105,16 +105,16 @@ do
 
       if [ "${exempt[i]}" == $Account ];
       then
-         touch /var/tmp/ualadminexempt
+         touch /var/tmp/adminexempt
       fi
 
    done
 
 # If exempt file doesn't exist, delete the account.
 
-   if [ ! -f /var/tmp/ualadminexempt ];
+   if [ ! -f /var/tmp/adminexempt ];
    then
-      dscl . delete /Users/$Account > /dev/null 2>&1
+      jamf deleteAccount -username $Account -deleteHomeDirectory
 	  rm -rf /Users/$Account
    fi
 
@@ -128,13 +128,10 @@ export IFS=$OIFS
 
 # Clean up any left over flag files
 
-if [ -f /var/tmp/ualadminexempt ];
+if [ -f /var/tmp/adminexempt ];
 then
-   rm /var/tmp/ualadminexempt
+   rm /var/tmp/adminexempt
 fi
 
-# Clean up the system audio plist file with previously deployed master plist file
-
-cp -fp /usr/local/scripts/com.apple.audio.SystemSettings.plist /Library/Preferences/Audio/
-
 # All done!
+exit 0
