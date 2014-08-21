@@ -1,8 +1,6 @@
 #!/bin/bash
 
 # Clear all non local admin accounts script
-# Script is based off work at the following webpage:
-# http://www.macos.utah.edu/documentation/authentication/dscl.html
 
 # Author: r.purves@arts.ac.uk
 # Version 1.0 25-10-2012 : Initial version
@@ -18,69 +16,83 @@
 #                          This was due to processing bugs that had been copied from that script.
 # Version 2.3 26-06-2013 : Added line to replace system audio preference file as this was clogging up with deleted users.
 # Version 2.4 10-09-2013 : Added read only user account for mounting sysvol share
+# Version 2.5 22-11-2013 : Removed line to replace system audio preference file as this was clogging up with deleted users.
+# Version 2.6 20-02-2014 : Modified account deletion to use JAMF binary. Old commands left in but commented out.
+# Version 3.0 28-03-2014 : Now uses JSS extension attribute AND current admins for excluded user list.
+
+# This section reads the current local admin users into $currentadmins
+
+# Read admin group membership into variable
+
+localadmins=$( dscl . -read /Groups/admin GroupMembership | cut -c18- )
+
+# Read that variable into an array
+
+read -a currentadmins <<< $localadmins
+
+# End of current local admin section
+
+# This section reads the admin users extension attribute into $extadminusers
 
 # Set up needed variables here
 
-macname=$( scutil --get ComputerName | awk '{print substr($0,length($0)-3,4)}' )
+ethernet=$(ifconfig en0|grep ether|awk '{ print $2; }')
+apiurl=`/usr/bin/defaults read /Library/Preferences/com.jamfsoftware.jamf.plist jss_url`
+apiuser="apiuser"
+apipass="password"
+
+# Grab user info from extension attribute for target computer and process.
+
+# Retrieve the computer record data from the JSS API
+
+cmd="curl --silent --user ${apiuser}:${apipass} --request GET ${apiurl}JSSResource/computers/macaddress/${ethernet//:/.}"
+hostinfo=$( ${cmd} )
+
+# Reprogram IFS to treat commas as a newline
+
 OIFS=$IFS
+IFS=$','
+
+# Now parse the data and get the usernames
+
+adminusers=${hostinfo##*Admin Users\<\/name\>\<value\>}
+adminusers=${adminusers%%\<\/value\>*}
+
+# If the Ext Attribute is blank, we need to test for that and blank the variable if so.
+# We'll get a large amount of xml in place if we don't!
+
+test=$( echo $adminusers | cut -c 3-5 )
+
+if [ $test == "xml" ];
+then
+   unset adminusers
+fi
+
+# End of extension attribute section
+
+# Special section to set up globally exempted user accounts. Read $4 for policy specified accounts.
+
+exempt=( "$adminusers",account1,account2,Shared,Guest,".localized","$4" )
+
+# Read exempt users into array
+
+read -a extadminusers <<< "$exempt"
+
+# About to merge our two array lists together. Set IFS to cope with newlines only.
+
 IFS=$'\n'
 
-# Special section to set up globally exempted user accounts
+# Merge the two arrays into one array to rule them all. $exemptusers
 
-exempt=( uadmin sshadmin Shared Guest .localized ualpss )
+exemptusers=(`for R in "${currentadmins[@]}" "${extadminusers[@]}" ; do echo "$R" ; done | sort -du`)
 
-# Mount fileshare where local admin file is kept.
+# Reset IFS back to normal
 
-mkdir /Volumes/SYSVOL
-mount_smbfs -o nobrowse //'DOMAIN;username:password'@domain.local/SYSVOL /Volumes/SYSVOL
-
-# Read localadmin file to LOCADMIN variable. We'll do all our processing from that.
-
-LOCADMIN=$(cat /Volumes/SYSVOL/domain.local/localadmin/localadmins.txt)
-
-# Unmount and clean up fileshare.
-
-diskutil umount force /Volumes/SYSVOL
-
-while read -r LOCADMIN
-do
-
-# Because the file contains bash reserved characters, we must remove them before processing.
-# This will cause the script to ignore the line totally.
-
-   line=$( echo ${LOCADMIN//[*]/} )
-
-# Grab the name of the computer from the current line of the file
-
-   compname=$( echo "${line}" | cut -d : -f 1 | awk '{print substr($0,length($0)-3,4)}' )
-   
-# Find out how many users are listed by counting the commas
-   
-   usercount=$( echo $((`echo ${line} | sed 's/[^,]//g' | wc -m`-1)) )
-
-# Does the current computer name match the one in the file?
-
-   if [ "$macname" = "$compname" ];
-   then
-
-      for (( loop=0; loop<=usercount; loop++ ))
-      do
-
-         field=$(($loop + 1))
-	     username=$( echo "${line}" | cut -d : -f 4 | cut -d "," -f ${field} | cut -c11- | sed "s/$(printf '\r')\$//" )
-
-      done             
-   fi
-
-done << EOF
-$LOCADMIN
-EOF
-
-exempt[$[${#exempt[@]}]]=`echo $username`
+IFS=$OIFS
 
 # Find exempt array length
 
-tLen=${#exempt[@]}
+tLen=${#exemptusers[@]}
 
 # Delete accounts apart from those in the exclusion array
 
@@ -89,11 +101,13 @@ tLen=${#exempt[@]}
 for Account in `ls /Users`
 do
 
+echo "Processing account name: "$Account
+
 # Does the flag file exist? If so, delete it.
 
-   if [ -f /var/tmp/adminexempt ];
+   if [ -f /var/tmp/ualadminexempt ];
    then
-      rm /var/tmp/adminexempt
+      rm /var/tmp/ualadminexempt
    fi
 
 # Loop around the exemption array to check current user.
@@ -103,35 +117,33 @@ do
 
 # Create the exemption flag file if account matches. We do this because of BASH's local variable limitation.
 
-      if [ "${exempt[i]}" == $Account ];
+      if [ "${exemptusers[i]}" == $Account ];
       then
-         touch /var/tmp/adminexempt
+      	 echo "Exempting user account: "$Account
+         touch /var/tmp/ualadminexempt
       fi
 
    done
 
 # If exempt file doesn't exist, delete the account.
 
-   if [ ! -f /var/tmp/adminexempt ];
+   if [ ! -f /var/tmp/ualadminexempt ];
    then
-      jamf deleteAccount -username $Account -deleteHomeDirectory
-	  rm -rf /Users/$Account
+		echo "Deleting user account: "$Account
+		jamf deleteAccount -username $Account -deleteHomeDirectory
    fi
 
 # Read the next username.
 
 done
 
-# Let's set IFS back to the way it was.
-
-export IFS=$OIFS
-
 # Clean up any left over flag files
 
-if [ -f /var/tmp/adminexempt ];
+if [ -f /var/tmp/ualadminexempt ];
 then
-   rm /var/tmp/adminexempt
+   rm /var/tmp/ualadminexempt
 fi
 
 # All done!
+
 exit 0
