@@ -2,7 +2,7 @@
 
 # Clear all non local admin accounts script
 
-# Author: r.purves@arts.ac.uk
+# Author: contact@richard-purves.com
 # Version 1.0 25-10-2012 : Initial version
 # Version 1.1 26-10-2012 : Allow specifying of the local admin account name
 # Version 1.2 10-01-2013 : Forced all logging to a file to stop Casper throwing tons of emails
@@ -105,9 +105,9 @@ echo "Processing account name: "$Account
 
 # Does the flag file exist? If so, delete it.
 
-   if [ -f /var/tmp/ualadminexempt ];
+   if [ -f /var/tmp/adminexempt ];
    then
-      rm /var/tmp/ualadminexempt
+      rm /var/tmp/adminexempt
    fi
 
 # Loop around the exemption array to check current user.
@@ -120,7 +120,7 @@ echo "Processing account name: "$Account
       if [ "${exemptusers[i]}" == $Account ];
       then
       	 echo "Exempting user account: "$Account
-         touch /var/tmp/ualadminexempt
+         touch /var/tmp/adminexempt
       fi
 
    done
@@ -139,9 +139,9 @@ done
 
 # Clean up any left over flag files
 
-if [ -f /var/tmp/ualadminexempt ];
+if [ -f /var/tmp/adminexempt ];
 then
-   rm /var/tmp/ualadminexempt
+   rm /var/tmp/adminexempt
 fi
 
 # All done!
